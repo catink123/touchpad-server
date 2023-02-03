@@ -1,0 +1,255 @@
+<html>
+
+<head>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Touchpad Client</title>
+
+  <style>
+    div.mbs {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100vw;
+      height: 75px;
+      display: flex;
+      flex-direction: row;
+      border-top: 2px solid gray;
+    }
+
+    div.mbs button {
+      flex: 1 1;
+      background: none;
+      border: none;
+    }
+
+    #rmb {
+      border-left: 1px solid gray;
+    }
+
+    .settingsPanelWrapper {
+      display: grid;
+      place-items: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    #settingsPanel {
+      border: 1px solid gray;
+      background: white;
+      padding: 10px;
+      gap: 5px;
+      flex-direction: column;
+      width: fit-content;
+      display: flex;
+    }
+
+    #settingsPanel p {
+      margin: 0;
+    }
+
+    #settingsPanel>div {
+      display: flex;
+      flex-direction: row;
+      gap: 5px;
+      align-items: center;
+    }
+
+    #settingsPanel>div>p {
+      flex: 1 1;
+    }
+  </style>
+
+  <script>
+    const $ = document.querySelector.bind(document);
+    HTMLElement.prototype.on = HTMLElement.prototype.addEventListener;
+    HTMLElement.prototype.onMultiple = function (type, listeners) {
+      listeners.forEach(listener => this.on(type, listener));
+    };
+    HTMLElement.prototype.off = HTMLElement.prototype.removeEventListener;
+    HTMLElement.prototype.offMultiple = function (type, listeners) {
+      listeners.forEach(listener => this.off(type, listener));
+    };
+  </script>
+
+  <script>
+    let ws, canv, stateEl, lmb, rmb, fullscreenButton, settingsPanel;
+
+    const instantiateWS = () => {
+      ws = undefined;
+      ws = new WebSocket(`ws://${window.location.host}/ws`);
+    };
+    instantiateWS();
+
+    const openSettings = () => settingsPanel.style.display = '';
+    const closeSettings = () => settingsPanel.style.display = 'none';
+
+    const _getSettingsFromLS = () => {
+      let saved = localStorage.getItem('touchpad-settings');
+      if (saved !== null) saved = JSON.parse(saved);
+      else saved = {
+        sensitivity: 1,
+        acceleration: 0
+      };
+      return saved;
+    };
+    let settings = new Proxy({}, {
+      get: (_t, prop, _r) => _getSettingsFromLS()[prop],
+      set: (_t, prop, val, _r) => {
+        let saved = _getSettingsFromLS();
+        saved[prop] = val;
+        localStorage.setItem('touchpad-settings', JSON.stringify(saved));
+      }
+    });
+
+    const sendMessage = (type, data) => ws.send(JSON.stringify({ type, data }));
+    const sendMove = (x, y) => sendMessage('move', { x: Math.floor(x), y: Math.floor(y) });
+
+    const setState = (state) => {
+      switch (state) {
+        case 'connected':
+          stateEl.style.color = 'green';
+          stateEl.innerText = '(connected)';
+          break;
+        case 'connecting':
+          stateEl.style.color = 'yellow';
+          stateEl.innerText = '(connecting)';
+          break;
+        case 'disconnected':
+          stateEl.style.color = 'red';
+          stateEl.innerText = '(disconnected)';
+          break;
+        default:
+          stateEl.style.color = 'black';
+          stateEl.innerText = '(unknown)';
+      }
+    };
+
+    const pointerDownHandler = e => {
+      e.preventDefault();
+      canv.requestPointerLock();
+    };
+    const pointerMoveHandler = e => {
+      e.preventDefault();
+      if (document.pointerLockElement === canv || e.pointerType === 'touch') {
+        sendMove(e.movementX * settings.sensitivity, e.movementY * settings.sensitivity);
+      }
+    };
+    const pointerUpHandler = e => {
+      document.exitPointerLock();
+    };
+    const lmbDownHandler = () => sendMessage('left_down');
+    const lmbUpHandler = () => sendMessage('left_up');
+    const rmbDownHandler = () => sendMessage('right_down');
+    const rmbUpHandler = () => sendMessage('right_up');
+    const buttonColorDownHandler = e => e.currentTarget.style.background = 'gray';
+    const buttonColorUpHandler = e => e.currentTarget.style.background = '';
+
+    const addCanvListeners = () => {
+      canv.on('pointerdown', pointerDownHandler);
+      canv.on('pointermove', pointerMoveHandler);
+      canv.on('pointerup', pointerUpHandler);
+    };
+    const removeCanvListeners = () => {
+      canv.off('pointerdown', pointerDownHandler);
+      canv.off('pointermove', pointerMoveHandler);
+      canv.off('pointerup', pointerUpHandler);
+    };
+
+    const addMBListeners = () => {
+      lmb.onMultiple('pointerdown', [lmbDownHandler, buttonColorDownHandler]);
+      lmb.onMultiple('pointerup', [lmbUpHandler, buttonColorUpHandler]);
+      rmb.onMultiple('pointerdown', [rmbDownHandler, buttonColorDownHandler]);
+      rmb.onMultiple('pointerup', [rmbUpHandler, buttonColorUpHandler]);
+    };
+    const removeMBListeners = () => {
+      lmb.offMultiple('pointerdown', [lmbDownHandler, buttonColorDownHandler]);
+      lmb.offMultiple('pointerup', [lmbUpHandler, buttonColorUpHandler]);
+      rmb.offMultiple('pointerdown', [rmbDownHandler, buttonColorDownHandler]);
+      rmb.offMultiple('pointerup', [rmbUpHandler, buttonColorUpHandler]);
+    };
+  </script>
+
+</head>
+
+<body>
+
+  <h1>Touchpad <span id="state"></span></h1>
+  <canvas
+    style="border: 1px dashed gray; touch-action: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; box-sizing: border-box"></canvas>
+  <div class="mbs">
+    <button id="lmb"></button>
+    <button id="rmb"></button>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 10px; position: fixed; margin: 10px; top: 0; right: 0;">
+    <button id="fullscreen" style="padding: 5px">Fullscreen!</button>
+    <button onclick="openSettings()" style="padding: 5px">Settings</button>
+  </div>
+<div class="settingsPanelWrapper" style="display: none">
+  <div id="settingsPanel">
+    <div>
+      <p>Sensitivity</p>
+      <input type="range" min="0.1" max="10" value="1" step="0.01" id="sensitivityInput">
+    </div>
+    <div>
+      <p>Acceleration</p>
+      <input type="range" min="0" max="2" value="0" step="0.01" id="accelerationInput">
+    </div>
+    <button onclick="closeSettings()">Close</button>
+  </div>
+</div>
+
+  <script>
+    canv = $('canvas');
+    stateEl = $('#state');
+
+    // Buttons
+    lmb = $('#lmb');
+    rmb = $('#rmb');
+    fullscreenButton = $('#fullscreen');
+    settingsPanel = $('.settingsPanelWrapper');
+
+    $('#sensitivityInput').value = settings.sensitivity;
+    $('#accelerationInput').value = settings.acceleration;
+    $('#sensitivityInput').on('input', e => settings.sensitivity = parseFloat(e.currentTarget.value));
+    $('#accelerationInput').on('input', e => settings.acceleration = parseFloat(e.currentTarget.value));
+
+    document.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement === document.documentElement) fullscreenButton.style.display = 'none';
+      else fullscreenButton.style.display = '';
+    });
+    fullscreenButton.on('click', () => document.documentElement.requestFullscreen());
+
+    const buttonColorChangeHandlerDown = e => e.style.background = 'gray';
+    const buttonColorChangeHandlerUp = e => e.style.background = '';
+
+    setState('connecting');
+
+    const wsOpenHandler = () => {
+      console.log('Connected!');
+      setState('connected');
+      addCanvListeners();
+      addMBListeners();
+    };
+    const wsCloseHandler = () => {
+      console.log('Disconnected. Retrying connection in 3 seconds..');
+      setState('disconnected');
+      removeCanvListeners();
+      removeMBListeners();
+      setTimeout(() => {
+        instantiateWS();
+        ws.addEventListener('open', wsOpenHandler);
+        ws.addEventListener('close', wsCloseHandler);
+      }, 3000);
+    };
+    ws.addEventListener('open', wsOpenHandler);
+    ws.addEventListener('close', wsCloseHandler);
+  </script>
+
+</body>
+
+</html>

@@ -1,0 +1,4 @@
+15:06:31 [DEBUG] (1) touchpad_server: Program started, writing the log.
+15:06:31 [INFO] Server started at 192.168.184.108:6890.
+15:06:31 [DEBUG] (1) tiny_http: Server listening on 0.0.0.0:6890
+15:06:31 [DEBUG] (2) tiny_http: Running accept thread
